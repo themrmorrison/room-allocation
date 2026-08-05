@@ -52,17 +52,16 @@ def main():
     # Remove duplicates just in case a student submitted twice
     students = list(set(students))
 
-    # Parse Friend Requests (Weight: 1st choice = 3, 2nd = 2, etc.)
+    # Parse Friend Requests (All choices have equal weight = 1)
     friend_requests = []
     for _, row in df_prefs.iterrows():
         if pd.notna(row[name_col]):
             s1 = str(row[name_col]).strip()
-            # Assign weights dynamically based on how many friend columns exist
-            for i, col in enumerate(friend_cols):
-                weight = max(1, len(friend_cols) - i) 
+            for col in friend_cols:
                 if pd.notna(row[col]):
                     s2 = str(row[col]).strip()
                     if s2 in students and s1 != s2: # Only count if friend is actually on the trip
+                        weight = 1 # All friends are treated equally
                         friend_requests.append((s1, s2, weight))
 
     # ---------------------------------------------------------
@@ -149,7 +148,7 @@ def main():
             if r_gender and r_gender != s_gender:
                 model.Add(x[(s, r)] == 0) # Block assignment
 
-    # F. Objective: Maximize Friend Requests
+    # F. Objective: Maximize Friend Requests (Unweighted)
     objective_terms = []
     for s1, s2, weight in friend_requests:
         for r in rooms:
@@ -174,7 +173,7 @@ def main():
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
         opt_status = "OPTIMAL" if status == cp_model.OPTIMAL else "FEASIBLE (Time limit reached)"
         print(f"\n✅ Solution Found! [{opt_status}]")
-        print(f"Total Preference Score: {solver.ObjectiveValue()}\n")
+        print(f"Total Friend Requests Granted: {int(solver.ObjectiveValue())}\n")
         print("-" * 40)
         
         for r, details in rooms.items():
@@ -195,4 +194,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-      
+    
