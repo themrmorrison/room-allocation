@@ -35,7 +35,7 @@ The Excel file must have exactly these **three tabs**:
 *This is the raw output downloaded directly from Google Forms.*
 * **Names:** Must contain a column with "Name" in the header. (e.g., *Student Name*). Use dropdowns in your Form to prevent typos!
 * **Gender:** Must contain a column with "Gender", "Boy", or "Girl" in the header. (e.g., *Are you a Boy or a Girl?*).
-* **Friends:** Must contain columns with "Friend" or "Choice" in the header. (e.g., *Friend Choice 1*, *Friend Choice 2*). The script automatically assigns higher points to the columns that appear first.
+* **Friends:** Must contain columns with "Friend" or "Choice" in the header. (e.g., *Friend Choice 1*, *Friend Choice 2*).
 
 ### Tab 2: `Rooms`
 Defines the available beds.
@@ -63,4 +63,3 @@ If the script outputs **"❌ No mathematical solution could be found"**, it mean
 1. **Bed Counts:** Ensure you have enough total *Boy* beds for the boys, and *Girl* beds for the girls.
 2. **Chain Reactions:** If Alice must be with Bob, Bob must be with Charlie, and Charlie must be with David, but room capacity is only 3, the script will fail.
 3. **Over-separation:** If you mark 6 boys as "Must Be Apart", but only have 5 boy rooms available to them, it cannot be solved.
-4. 
