@@ -62,7 +62,13 @@ def main():
 
     # Remove duplicates just in case a student submitted twice
     students = list(dict.fromkeys(students))
-    student_lookup = {normalize_name(s): s for s in students}
+    normalized_name_groups = {}
+    for s in students:
+        normalized_name_groups.setdefault(normalize_name(s), []).append(s)
+    student_lookup = {normalized: originals[0] for normalized, originals in normalized_name_groups.items()}
+    for normalized, originals in normalized_name_groups.items():
+        if len(originals) > 1:
+            print(f"  ⚠️ Name normalization collision for {originals}. Using {student_lookup[normalized]!r} for matching.")
 
     gender_counts = {}
     for g in student_genders.values():
@@ -72,8 +78,11 @@ def main():
     # Parse Friend Requests (friends are comma-separated within each cell)
     friend_requests = []
     for _, row in df_prefs.iterrows():
-        s1 = next((str(row[c]).strip() for c in name_cols if pd.notna(row[c])), None)
-        if s1 is None:
+        s1_raw = next((str(row[c]).strip() for c in name_cols if pd.notna(row[c])), None)
+        if s1_raw is None:
+            continue
+        s1 = student_lookup.get(normalize_name(s1_raw))
+        if not s1:
             continue
         for col in friend_cols:
             if pd.notna(row[col]):
