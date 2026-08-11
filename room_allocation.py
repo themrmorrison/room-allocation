@@ -122,7 +122,7 @@ def main():
     print(f"  Constraints: {len(must_together)} must-be-together, {len(must_apart)} must-be-apart")
 
     # ---------------------------------------------------------
-    # 4. BUILD THE OR-TOOLS MODEL
+    # 4. BUILD THE OR-TOOLS MODEL (OPTIMIZED)
     # ---------------------------------------------------------
     print(f"Building model for {len(students)} students and {len(rooms)} rooms...")
     model = cp_model.CpModel()
@@ -150,29 +150,41 @@ def main():
         for r in rooms:
             model.AddAtMostOne([x[(s1, r)], x[(s2, r)]])
 
-    # D. Pairwise Gender Segregation (No boys and girls in same room, EVER)
-    for i, s1 in enumerate(students):
-        for j, s2 in enumerate(students):
-            if i < j:
-                if student_genders[s1] != student_genders[s2]:
-                    for r in rooms:
-                        model.AddAtMostOne([x[(s1, r)], x[(s2, r)]])
+    # D & E. OPTIMIZED GENDER SEGREGATION & PRE-ASSIGNED ROOM GENDERS
+    # Separate students by gender first
+    boys = [s for s, g in student_genders.items() if g in ['boy', 'b', 'male', 'm']]
+    girls = [s for s, g in student_genders.items() if g in ['girl', 'g', 'female', 'f']]
 
-    # E. Pre-Assigned Room Genders (Optional)
-    for s in students:
-        s_gender = student_genders[s]
-        for r, details in rooms.items():
-            r_gender = details['gender']
-            if r_gender and r_gender != s_gender:
-                model.Add(x[(s, r)] == 0) # Block assignment
+    for r, details in rooms.items():
+        r_gender = details['gender']
+        
+        # If pre-assigned, block opposite gender directly
+        if r_gender in ['boy', 'b', 'male', 'm']:
+            for g in girls:
+                model.Add(x[(g, r)] == 0)
+        elif r_gender in ['girl', 'g', 'female', 'f']:
+            for b in boys:
+                model.Add(x[(b, r)] == 0)
+        else:
+            # Flexible room: enforce that it cannot contain BOTH boys and girls
+            has_boy = model.NewBoolVar(f'has_boy_{r}')
+            has_girl = model.NewBoolVar(f'has_girl_{r}')
+            
+            # If any boy is in room r -> has_boy is 1
+            model.AddMaxEquality(has_boy, [x[(b, r)] for b in boys] if boys else [0])
+            # If any girl is in room r -> has_girl is 1
+            model.AddMaxEquality(has_girl, [x[(g, r)] for g in girls] if girls else [0])
+            
+            # Cannot have both boys and girls in the same room
+            model.AddAtMostOne([has_boy, has_girl])
 
-    # F. Objective: Maximize Friend Requests (Unweighted)
+    # F. Objective: Maximize Friend Requests
     objective_terms = []
     for s1, s2, weight in friend_requests:
         for r in rooms:
             together_in_r = model.NewBoolVar(f'{s1}_{s2}_together_{r}')
-            model.AddImplication(together_in_r, x[(s1, r)])
-            model.AddImplication(together_in_r, x[(s2, r)])
+            # Use BoolAnd instead of Implication for tighter LP relaxation
+            model.AddBoolAnd([x[(s1, r)], x[(s2, r)]]).OnlyEnforceIf(together_in_r)
             objective_terms.append(weight * together_in_r)
 
     model.Maximize(sum(objective_terms))
