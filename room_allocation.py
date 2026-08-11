@@ -244,12 +244,11 @@ def main():
 
         not_granted_total = sum(1 for reqs in requests_by_student.values() for _, g in reqs if not g)
         print("-" * 40)
-        print(f"Friend Request Breakdown (❌ = not granted, {not_granted_total} total):\n")
+        print(f"Friend Request Breakdown (all parsed requests shown, ❌ = not granted, {not_granted_total} total not granted):\n")
         for s1 in sorted(requests_by_student):
             reqs = requests_by_student[s1]
-            if any(not g for _, g in reqs):
-                marks = ", ".join(f"{'✅' if g else '❌'} {s2}" for s2, g in reqs)
-                print(f"  {s1}: {marks}")
+            marks = ", ".join(f"{'✅' if g else '❌'} {s2}" for s2, g in reqs)
+            print(f"  {s1}: {marks}")
         print()
     else:
         print("\n❌ No mathematical solution could be found.")
