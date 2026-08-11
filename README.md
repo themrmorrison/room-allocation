@@ -17,7 +17,7 @@ To avoid interfering with other Python projects on your laptop, it is best pract
    ```
 4. **Activate the virtual environment:**
    ```cmd
-   venv\Scripts\activate
+   source venv/bin/activate
    ```
    *(Note: If you are using PowerShell and get an "Execution Policy" error, use standard Command Prompt `cmd` instead, as department laptops often block PowerShell scripts).*
 5. **Install the required libraries:**
@@ -31,11 +31,14 @@ All data must be stored in a local Excel file named **`excursion_data.xlsx`**. E
 
 The Excel file must have exactly these **three tabs**:
 
-### Tab 1: `Form Responses 1`
-*This is the raw output downloaded directly from Google Forms.*
-* **Names:** Must contain a column with "Name" in the header. (e.g., *Student Name*). Use dropdowns in your Form to prevent typos!
+### Tab 1: `Form responses 1`
+*This is the raw output downloaded directly from Google Forms — paste it in without modifying the column headers.*
+
+The script supports the standard layout where boys and girls have **separate sections** in the same form, producing duplicate column headers (e.g. two *"What's your name?"* columns and two *"Choose 3 friends…"* columns). Pandas handles the duplicates automatically.
+
 * **Gender:** Must contain a column with "Gender", "Boy", or "Girl" in the header. (e.g., *Are you a Boy or a Girl?*).
-* **Friends:** Must contain columns with "Friend" or "Choice" in the header. (e.g., *Friend Choice 1*, *Friend Choice 2*).
+* **Names:** Must contain at least one column with "Name" in the header. If your form has a separate name question for boys and girls, both columns are detected automatically — each student's name is read from whichever column they filled in. Use dropdowns in your Form to prevent typos!
+* **Friends:** Must contain at least one column with "Friend" or "Choice" in the header. Friend choices can be **comma-separated in a single cell** (e.g., *Alice Smith, Bob Jones, Carol Lee*) or spread across multiple columns — both formats are handled.
 
 ### Tab 2: `Rooms`
 Defines the available beds.
@@ -56,6 +59,8 @@ Manual teacher overrides.
    ```cmd
    python room_allocation.py
    ```
+
+The script prints a parsing summary (columns detected, student counts, rooms) before solving, so you can catch data issues early. After the room assignments it prints a **Friend Request Breakdown** listing every student who had at least one request not granted, showing ✅/❌ against each of their choices.
 
 ## Troubleshooting
 
