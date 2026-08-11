@@ -10,7 +10,7 @@ FILE_PATH = 'excursion_data.xlsx'
 FORM_TAB = 'Form responses 1'
 ROOMS_TAB = 'Rooms'
 CONSTRAINTS_TAB = 'Constraints'
-TIME_LIMIT_SECONDS = 15.0
+TIME_LIMIT_SECONDS = 120.0
 
 def main():
     print("Loading data from Excel...")
