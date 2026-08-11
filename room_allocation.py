@@ -178,16 +178,54 @@ def main():
             # Cannot have both boys and girls in the same room
             model.AddAtMostOne([has_boy, has_girl])
 
-    # F. Objective: Maximize Friend Requests
-    objective_terms = []
-    for s1, s2, weight in friend_requests:
-        for r in rooms:
-            together_in_r = model.NewBoolVar(f'{s1}_{s2}_together_{r}')
-            # Use BoolAnd instead of Implication for tighter LP relaxation
-            model.AddBoolAnd([x[(s1, r)], x[(s2, r)]]).OnlyEnforceIf(together_in_r)
-            objective_terms.append(weight * together_in_r)
+    # F. Objective: Fairness layer — maximize students with ≥1 friend, then total requests
+    #
+    # We build:
+    #   together_in_r[(s1,s2,r)] = 1 iff s1 and s2 are both assigned to room r
+    #   any_friend_in_r[(s1,s2)] = 1 iff s1 and s2 share any room (collapsed across rooms)
+    #   student_satisfied[s1]   = 1 iff s1 gets at least one requested friend in their room
+    #
+    # Objective (lexicographic via large-weight scalarisation):
+    #   Maximize  W * sum(student_satisfied)  +  sum(any_friend_in_r)
+    # where W > (max possible total requests) so the primary goal is never sacrificed.
 
-    model.Maximize(sum(objective_terms))
+    together_vars = {}   # (s1, s2, r) -> BoolVar
+    pair_together = {}   # (s1, s2)    -> BoolVar  (1 if they share any room)
+
+    # Collect unique (requester, requested) pairs — deduplicate across rooms
+    unique_pairs = list({(s1, s2) for s1, s2, _ in friend_requests})
+
+    for s1, s2 in unique_pairs:
+        per_room = []
+        for r in rooms:
+            v = model.NewBoolVar(f'{s1}_{s2}_together_{r}')
+            model.AddBoolAnd([x[(s1, r)], x[(s2, r)]]).OnlyEnforceIf(v)
+            model.AddBoolOr([x[(s1, r)].Not(), x[(s2, r)].Not()]).OnlyEnforceIf(v.Not())
+            together_vars[(s1, s2, r)] = v
+            per_room.append(v)
+
+        # pair_together is 1 iff the pair shares any room
+        pt = model.NewBoolVar(f'{s1}_{s2}_any_room')
+        model.AddMaxEquality(pt, per_room)
+        pair_together[(s1, s2)] = pt
+
+    # student_satisfied[s] = 1 iff at least one of s's requested friends is in the same room
+    student_satisfied = {}
+    requesters = list({s1 for s1, s2, _ in friend_requests})
+    for s in requesters:
+        pairs_for_s = [pair_together[(s, s2)] for s1, s2, _ in friend_requests if s1 == s]
+        sat = model.NewBoolVar(f'satisfied_{s}')
+        model.AddMaxEquality(sat, pairs_for_s)
+        student_satisfied[s] = sat
+
+    # Large weight: ensures maximising satisfied students is always preferred over
+    # maximising total pair grants (bounded by len(friend_requests)).
+    W = len(friend_requests) + 1
+
+    fairness_terms = [W * student_satisfied[s] for s in requesters]
+    total_terms    = list(pair_together.values())
+
+    model.Maximize(sum(fairness_terms) + sum(total_terms))
 
     # ---------------------------------------------------------
     # 5. SOLVE
@@ -202,8 +240,13 @@ def main():
     # ---------------------------------------------------------
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
         opt_status = "OPTIMAL" if status == cp_model.OPTIMAL else "FEASIBLE (Time limit reached)"
+
+        num_satisfied = sum(solver.Value(student_satisfied[s]) for s in requesters)
+        total_granted = sum(solver.Value(pair_together[(s1, s2)]) for s1, s2 in unique_pairs)
+
         print(f"\n✅ Solution Found! [{opt_status}]")
-        print(f"Total Friend Requests Granted: {int(solver.ObjectiveValue())}\n")
+        print(f"Students who get ≥1 friend:  {num_satisfied} / {len(requesters)}")
+        print(f"Total Friend Requests Granted: {total_granted}\n")
         print("-" * 40)
         
         for r, details in rooms.items():
@@ -215,14 +258,11 @@ def main():
                     print(f"   - {s} ({student_genders[s]})")
                 print()
 
-        # Build a room lookup so we can check whether any two students share a room
-        room_of = {s: r for r in rooms for s in students if solver.Value(x[(s, r)]) == 1}
-
         # Group requests by requester and annotate each with whether it was granted
         from collections import defaultdict
         requests_by_student = defaultdict(list)
         for s1, s2, _ in friend_requests:
-            granted = room_of.get(s1) == room_of.get(s2)
+            granted = bool(solver.Value(pair_together[(s1, s2)]))
             requests_by_student[s1].append((s2, granted))
 
         not_granted_total = sum(1 for reqs in requests_by_student.values() for _, g in reqs if not g)
