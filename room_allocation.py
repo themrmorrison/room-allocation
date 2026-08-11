@@ -2,6 +2,7 @@ import pandas as pd
 from ortools.sat.python import cp_model
 import sys
 import math
+import re
 
 # ---------------------------------------------------------
 # CONFIGURATION
@@ -11,6 +12,9 @@ FORM_TAB = 'Form responses 1'
 ROOMS_TAB = 'Rooms'
 CONSTRAINTS_TAB = 'Constraints'
 TIME_LIMIT_SECONDS = 120.0
+
+def normalize_name(name):
+    return re.sub(r'\s+', ' ', str(name).strip()).lower()
 
 def main():
     print("Loading data from Excel...")
@@ -57,7 +61,8 @@ def main():
         student_genders[s_name] = s_gender
 
     # Remove duplicates just in case a student submitted twice
-    students = list(set(students))
+    students = list(dict.fromkeys(students))
+    student_lookup = {normalize_name(s): s for s in students}
 
     gender_counts = {}
     for g in student_genders.values():
@@ -72,8 +77,11 @@ def main():
             continue
         for col in friend_cols:
             if pd.notna(row[col]):
-                for s2 in [name.strip() for name in str(row[col]).split(',')]:
-                    if s2 in students and s1 != s2:  # only count if friend is actually on the trip
+                for s2_raw in [name.strip() for name in re.split(r'[,;\n]+', str(row[col]))]:
+                    if not s2_raw:
+                        continue
+                    s2 = student_lookup.get(normalize_name(s2_raw))
+                    if s2 and s1 != s2:  # only count if friend is actually on the trip
                         friend_requests.append((s1, s2, 1))
 
     print(f"  Friend requests parsed: {len(friend_requests)}")
