@@ -7,7 +7,7 @@ import math
 # CONFIGURATION
 # ---------------------------------------------------------
 FILE_PATH = 'excursion_data.xlsx'
-FORM_TAB = 'Form Responses 1'
+FORM_TAB = 'Form responses 1'
 ROOMS_TAB = 'Rooms'
 CONSTRAINTS_TAB = 'Constraints'
 TIME_LIMIT_SECONDS = 15.0
@@ -28,11 +28,16 @@ def main():
     # ---------------------------------------------------------
     # 1. PARSE & VALIDATE: FORM RESPONSES
     # ---------------------------------------------------------
-    name_col = next((col for col in df_prefs.columns if 'name' in col.lower() or 'who' in col.lower()), None)
+    # Collect all name columns — the sheet has one per gender section (pandas suffixes duplicates with .1, .2, …)
+    name_cols = [col for col in df_prefs.columns if 'name' in col.lower() or 'who' in col.lower()]
     gender_col = next((col for col in df_prefs.columns if 'boy' in col.lower() or 'girl' in col.lower() or 'gender' in col.lower()), None)
     friend_cols = [col for col in df_prefs.columns if 'friend' in col.lower() or 'choice' in col.lower()]
 
-    if not name_col:
+    print(f"  Name columns found ({len(name_cols)}): {name_cols}")
+    print(f"  Gender column: {gender_col}")
+    print(f"  Friend columns found ({len(friend_cols)}): {friend_cols}")
+
+    if not name_cols:
         raise ValueError("❌ Could not find a column for Student Names. Add 'Name' to the question title.")
     if not gender_col:
         raise ValueError("❌ Could not find a column for Gender. Add 'Gender' or 'Boy/Girl' to the question title.")
@@ -43,26 +48,35 @@ def main():
     students = []
     student_genders = {}
     for _, row in df_prefs.iterrows():
-        if pd.notna(row[name_col]):
-            s_name = str(row[name_col]).strip()
-            s_gender = str(row[gender_col]).strip().lower() if pd.notna(row[gender_col]) else 'unknown'
-            students.append(s_name)
-            student_genders[s_name] = s_gender
-            
+        # Resolve name from whichever name column has data for this row
+        s_name = next((str(row[c]).strip() for c in name_cols if pd.notna(row[c])), None)
+        if s_name is None:
+            continue
+        s_gender = str(row[gender_col]).strip().lower() if pd.notna(row[gender_col]) else 'unknown'
+        students.append(s_name)
+        student_genders[s_name] = s_gender
+
     # Remove duplicates just in case a student submitted twice
     students = list(set(students))
 
-    # Parse Friend Requests (All choices have equal weight = 1)
+    gender_counts = {}
+    for g in student_genders.values():
+        gender_counts[g] = gender_counts.get(g, 0) + 1
+    print(f"  Students loaded: {len(students)} total — " + ", ".join(f"{g}: {n}" for g, n in sorted(gender_counts.items())))
+
+    # Parse Friend Requests (friends are comma-separated within each cell)
     friend_requests = []
     for _, row in df_prefs.iterrows():
-        if pd.notna(row[name_col]):
-            s1 = str(row[name_col]).strip()
-            for col in friend_cols:
-                if pd.notna(row[col]):
-                    s2 = str(row[col]).strip()
-                    if s2 in students and s1 != s2: # Only count if friend is actually on the trip
-                        weight = 1 # All friends are treated equally
-                        friend_requests.append((s1, s2, weight))
+        s1 = next((str(row[c]).strip() for c in name_cols if pd.notna(row[c])), None)
+        if s1 is None:
+            continue
+        for col in friend_cols:
+            if pd.notna(row[col]):
+                for s2 in [name.strip() for name in str(row[col]).split(',')]:
+                    if s2 in students and s1 != s2:  # only count if friend is actually on the trip
+                        friend_requests.append((s1, s2, 1))
+
+    print(f"  Friend requests parsed: {len(friend_requests)}")
 
     # ---------------------------------------------------------
     # 2. PARSE: ROOMS
@@ -82,7 +96,9 @@ def main():
                 r_gender = str(row[room_gender_col]).strip().lower()
                 
             rooms[r_name] = {'capacity': capacity, 'gender': r_gender}
+            print(f"  Room: {r_name!r} — capacity {capacity}, gender: {r_gender or 'flexible'}")
 
+    print(f"  Total beds: {total_capacity}")
     if len(students) > total_capacity:
         raise ValueError(f"❌ Not enough beds! {len(students)} students, but only {total_capacity} beds.")
 
@@ -102,6 +118,8 @@ def main():
                     must_together.append((s1, s2))
                 elif 'apart' in c_type:
                     must_apart.append((s1, s2))
+
+    print(f"  Constraints: {len(must_together)} must-be-together, {len(must_apart)} must-be-apart")
 
     # ---------------------------------------------------------
     # 4. BUILD THE OR-TOOLS MODEL
@@ -184,6 +202,26 @@ def main():
                 for s in assigned:
                     print(f"   - {s} ({student_genders[s]})")
                 print()
+
+        # Build a room lookup so we can check whether any two students share a room
+        room_of = {s: r for r in rooms for s in students if solver.Value(x[(s, r)]) == 1}
+
+        # Group requests by requester and annotate each with whether it was granted
+        from collections import defaultdict
+        requests_by_student = defaultdict(list)
+        for s1, s2, _ in friend_requests:
+            granted = room_of.get(s1) == room_of.get(s2)
+            requests_by_student[s1].append((s2, granted))
+
+        not_granted_total = sum(1 for reqs in requests_by_student.values() for _, g in reqs if not g)
+        print("-" * 40)
+        print(f"Friend Request Breakdown (❌ = not granted, {not_granted_total} total):\n")
+        for s1 in sorted(requests_by_student):
+            reqs = requests_by_student[s1]
+            if any(not g for _, g in reqs):
+                marks = ", ".join(f"{'✅' if g else '❌'} {s2}" for s2, g in reqs)
+                print(f"  {s1}: {marks}")
+        print()
     else:
         print("\n❌ No mathematical solution could be found.")
         print("This usually means your constraints contradict each other.")
